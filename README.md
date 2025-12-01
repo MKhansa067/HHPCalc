@@ -1,4 +1,5 @@
 # HPPCalc
+<img width="1898" height="916" alt="image" src="https://github.com/user-attachments/assets/a524799a-e7c2-43f6-b771-68951f876d80" />  
 <div align="justify">  
 Kalkulator Harga Pokok Penjualan untuk meningkatkan laba dan efisiensi, serta memberikan strategi penjualan yang menguntungkan.  
 </div>  
