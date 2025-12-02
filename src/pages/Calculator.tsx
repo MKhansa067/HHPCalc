@@ -13,25 +13,40 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { getProducts, getMaterials, getLaborRates } from '@/lib/store';
+import { getProducts, getLaborRates } from '@/lib/store';
 import { calculateHPP, formatCurrency, formatNumber } from '@/lib/hpp-calculator';
-import type { Product, HPPResult } from '@/types';
+import type { Product, HPPResult, LaborRate } from '@/types';
 
 const Calculator: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
+  const [laborRates, setLaborRates] = useState<LaborRate[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [marginPercent, setMarginPercent] = useState(30);
   const [laborMinutes, setLaborMinutes] = useState(30);
   const [monthlyProduction, setMonthlyProduction] = useState(500);
   const [result, setResult] = useState<HPPResult | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadedProducts = getProducts();
-    setProducts(loadedProducts);
-    if (loadedProducts.length > 0) {
-      setSelectedProductId(loadedProducts[0].id);
-      setLaborMinutes(loadedProducts[0].laborMinutes);
-    }
+    const loadData = async () => {
+      try {
+        const [loadedProducts, loadedLaborRates] = await Promise.all([
+          getProducts(),
+          getLaborRates()
+        ]);
+        setProducts(loadedProducts);
+        setLaborRates(loadedLaborRates);
+        if (loadedProducts.length > 0) {
+          setSelectedProductId(loadedProducts[0].id);
+          setLaborMinutes(loadedProducts[0].laborMinutes);
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
   }, []);
 
   const selectedProduct = useMemo(() => {
@@ -44,10 +59,10 @@ const Calculator: React.FC = () => {
     }
   }, [selectedProduct]);
 
-  const handleCalculate = () => {
+  const handleCalculate = async () => {
     if (!selectedProduct) return;
 
-    const hppResult = calculateHPP(selectedProduct, {
+    const hppResult = await calculateHPP(selectedProduct, {
       marginPercent,
       laborMinutes,
       monthlyProduction,
@@ -64,6 +79,14 @@ const Calculator: React.FC = () => {
     }
     setResult(null);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in">
@@ -271,7 +294,7 @@ const Calculator: React.FC = () => {
                             {formatCurrency(result.breakdown.laborCost)}
                           </p>
                           <p className="text-sm text-muted-foreground mt-1">
-                            {laborMinutes} menit @ Rp{formatNumber(getLaborRates()[0]?.wagePerHour || 20000)}/jam
+                            {laborMinutes} menit @ Rp{formatNumber(laborRates[0]?.wagePerHour || 20000)}/jam
                           </p>
                         </div>
 
