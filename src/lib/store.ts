@@ -1,322 +1,548 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { Material, Product, Overhead, LaborRate, Sale, Unit } from '@/types';
-
-// Local storage keys
-const STORAGE_KEYS = {
-  materials: 'hpp_materials',
-  products: 'hpp_products',
-  overheads: 'hpp_overheads',
-  laborRates: 'hpp_labor_rates',
-  sales: 'hpp_sales',
-};
-
-// Helper functions
-const loadFromStorage = <T>(key: string, defaultValue: T): T => {
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error(`Error loading ${key} from storage:`, e);
-  }
-  return defaultValue;
-};
-
-const saveToStorage = <T>(key: string, data: T): void => {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (e) {
-    console.error(`Error saving ${key} to storage:`, e);
-  }
-};
+import { supabase } from '@/integrations/supabase/client';
+import type { Material, Product, ProductIngredient, Overhead, LaborRate, Sale, Unit } from '@/types';
 
 // Seed data for demo
-const seedMaterials: Material[] = [
-  { id: uuidv4(), name: 'Tepung Terigu', unit: 'kg', pricePerUnit: 12000, stockAmount: 50, updatedAt: new Date() },
-  { id: uuidv4(), name: 'Gula Pasir', unit: 'kg', pricePerUnit: 15000, stockAmount: 30, updatedAt: new Date() },
-  { id: uuidv4(), name: 'Telur', unit: 'pcs', pricePerUnit: 2500, stockAmount: 200, updatedAt: new Date() },
-  { id: uuidv4(), name: 'Mentega', unit: 'g', pricePerUnit: 80, stockAmount: 5000, updatedAt: new Date() },
-  { id: uuidv4(), name: 'Susu UHT', unit: 'ml', pricePerUnit: 20, stockAmount: 10000, updatedAt: new Date() },
-  { id: uuidv4(), name: 'Cokelat Bubuk', unit: 'g', pricePerUnit: 150, stockAmount: 2000, updatedAt: new Date() },
-  { id: uuidv4(), name: 'Vanili', unit: 'g', pricePerUnit: 500, stockAmount: 500, updatedAt: new Date() },
-  { id: uuidv4(), name: 'Baking Powder', unit: 'g', pricePerUnit: 100, stockAmount: 1000, updatedAt: new Date() },
+const seedMaterials: Omit<Material, 'id' | 'updatedAt'>[] = [
+  { name: 'Tepung Terigu', unit: 'kg', pricePerUnit: 12000, stockAmount: 50 },
+  { name: 'Gula Pasir', unit: 'kg', pricePerUnit: 15000, stockAmount: 30 },
+  { name: 'Telur', unit: 'pcs', pricePerUnit: 2500, stockAmount: 200 },
+  { name: 'Mentega', unit: 'g', pricePerUnit: 80, stockAmount: 5000 },
+  { name: 'Susu UHT', unit: 'ml', pricePerUnit: 20, stockAmount: 10000 },
+  { name: 'Cokelat Bubuk', unit: 'g', pricePerUnit: 150, stockAmount: 2000 },
+  { name: 'Vanili', unit: 'g', pricePerUnit: 500, stockAmount: 500 },
+  { name: 'Baking Powder', unit: 'g', pricePerUnit: 100, stockAmount: 1000 },
 ];
 
-const seedOverheads: Overhead[] = [
-  { id: uuidv4(), name: 'Listrik & Gas', amount: 500000, allocationType: 'fixed' },
-  { id: uuidv4(), name: 'Sewa Tempat', amount: 2000000, allocationType: 'fixed' },
-  { id: uuidv4(), name: 'Packaging', amount: 500, allocationType: 'per_unit' },
+const seedOverheads: Omit<Overhead, 'id'>[] = [
+  { name: 'Listrik & Gas', amount: 500000, allocationType: 'fixed' },
+  { name: 'Sewa Tempat', amount: 2000000, allocationType: 'fixed' },
+  { name: 'Packaging', amount: 500, allocationType: 'per_unit' },
 ];
 
-const seedLaborRates: LaborRate[] = [
-  { id: uuidv4(), name: 'Baker', wagePerHour: 25000 },
-  { id: uuidv4(), name: 'Helper', wagePerHour: 15000 },
+const seedLaborRates: Omit<LaborRate, 'id'>[] = [
+  { name: 'Baker', wagePerHour: 25000 },
+  { name: 'Helper', wagePerHour: 15000 },
 ];
 
-// Materials API
-export const getMaterials = (): Material[] => {
-  const materials = loadFromStorage<Material[]>(STORAGE_KEYS.materials, []);
-  if (materials.length === 0) {
-    saveMaterials(seedMaterials);
-    return seedMaterials;
+// ============ MATERIALS API ============
+export const getMaterials = async (): Promise<Material[]> => {
+  const { data, error } = await supabase
+    .from('materials')
+    .select('*')
+    .order('name');
+
+  if (error) {
+    console.error('Error fetching materials:', error);
+    return [];
   }
-  return materials;
+
+  // Seed if empty
+  if (!data || data.length === 0) {
+    await seedMaterialsData();
+    return getMaterials();
+  }
+
+  return data.map(m => ({
+    id: m.id,
+    name: m.name,
+    unit: m.unit as Unit,
+    pricePerUnit: m.price_per_unit,
+    stockAmount: m.stock_amount,
+    updatedAt: new Date(m.updated_at),
+  }));
 };
 
-export const saveMaterials = (materials: Material[]): void => {
-  saveToStorage(STORAGE_KEYS.materials, materials);
-};
-
-export const addMaterial = (material: Omit<Material, 'id' | 'updatedAt'>): Material => {
-  const materials = getMaterials();
-  const newMaterial: Material = {
-    ...material,
+const seedMaterialsData = async () => {
+  const materials = seedMaterials.map(m => ({
     id: uuidv4(),
-    updatedAt: new Date(),
+    name: m.name,
+    unit: m.unit,
+    price_per_unit: m.pricePerUnit,
+    stock_amount: m.stockAmount,
+  }));
+
+  const { error } = await supabase.from('materials').insert(materials);
+  if (error) console.error('Error seeding materials:', error);
+};
+
+export const addMaterial = async (material: Omit<Material, 'id' | 'updatedAt'>): Promise<Material | null> => {
+  const { data, error } = await supabase
+    .from('materials')
+    .insert({
+      id: uuidv4(),
+      name: material.name,
+      unit: material.unit,
+      price_per_unit: material.pricePerUnit,
+      stock_amount: material.stockAmount,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error adding material:', error);
+    return null;
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    unit: data.unit as Unit,
+    pricePerUnit: data.price_per_unit,
+    stockAmount: data.stock_amount,
+    updatedAt: new Date(data.updated_at),
   };
-  saveMaterials([...materials, newMaterial]);
-  return newMaterial;
 };
 
-export const updateMaterial = (id: string, updates: Partial<Material>): Material | null => {
-  const materials = getMaterials();
-  const index = materials.findIndex(m => m.id === id);
-  if (index === -1) return null;
-  
-  materials[index] = { ...materials[index], ...updates, updatedAt: new Date() };
-  saveMaterials(materials);
-  return materials[index];
+export const updateMaterial = async (id: string, updates: Partial<Material>): Promise<Material | null> => {
+  const updateData: Record<string, unknown> = {};
+  if (updates.name !== undefined) updateData.name = updates.name;
+  if (updates.unit !== undefined) updateData.unit = updates.unit;
+  if (updates.pricePerUnit !== undefined) updateData.price_per_unit = updates.pricePerUnit;
+  if (updates.stockAmount !== undefined) updateData.stock_amount = updates.stockAmount;
+
+  const { data, error } = await supabase
+    .from('materials')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating material:', error);
+    return null;
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    unit: data.unit as Unit,
+    pricePerUnit: data.price_per_unit,
+    stockAmount: data.stock_amount,
+    updatedAt: new Date(data.updated_at),
+  };
 };
 
-export const deleteMaterial = (id: string): boolean => {
-  const materials = getMaterials();
-  const filtered = materials.filter(m => m.id !== id);
-  if (filtered.length === materials.length) return false;
-  saveMaterials(filtered);
+export const deleteMaterial = async (id: string): Promise<boolean> => {
+  const { error } = await supabase.from('materials').delete().eq('id', id);
+  if (error) {
+    console.error('Error deleting material:', error);
+    return false;
+  }
   return true;
 };
 
-// Seed products
-const createSeedProducts = (materials: Material[]): Product[] => {
-  const tepung = materials.find(m => m.name === 'Tepung Terigu');
-  const gula = materials.find(m => m.name === 'Gula Pasir');
-  const telur = materials.find(m => m.name === 'Telur');
-  const mentega = materials.find(m => m.name === 'Mentega');
-  const susu = materials.find(m => m.name === 'Susu UHT');
-  const cokelat = materials.find(m => m.name === 'Cokelat Bubuk');
-  const vanili = materials.find(m => m.name === 'Vanili');
-  const bakingPowder = materials.find(m => m.name === 'Baking Powder');
+// ============ PRODUCTS API ============
+export const getProducts = async (): Promise<Product[]> => {
+  const { data: products, error } = await supabase
+    .from('products')
+    .select(`
+      *,
+      product_ingredients (*)
+    `)
+    .order('name');
 
-  if (!tepung || !gula || !telur || !mentega || !susu) return [];
+  if (error) {
+    console.error('Error fetching products:', error);
+    return [];
+  }
 
-  return [
-    {
-      id: uuidv4(),
-      name: 'Brownies Coklat',
-      description: 'Brownies coklat premium dengan topping almond',
-      yieldPerBatch: 12,
-      laborMinutes: 45,
-      ingredients: [
-        { id: uuidv4(), materialId: tepung.id, quantity: 250 }, // 250g tepung
-        { id: uuidv4(), materialId: gula.id, quantity: 200 }, // 200g gula (0.2kg)
-        { id: uuidv4(), materialId: telur.id, quantity: 4 }, // 4 telur
-        { id: uuidv4(), materialId: mentega.id, quantity: 150 }, // 150g mentega
-        { id: uuidv4(), materialId: cokelat?.id || '', quantity: 100 }, // 100g cokelat
-      ].filter(i => i.materialId),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: uuidv4(),
-      name: 'Kue Bolu Vanilla',
-      description: 'Kue bolu lembut dengan aroma vanilla',
-      yieldPerBatch: 8,
-      laborMinutes: 60,
-      ingredients: [
-        { id: uuidv4(), materialId: tepung.id, quantity: 300 },
-        { id: uuidv4(), materialId: gula.id, quantity: 250 },
-        { id: uuidv4(), materialId: telur.id, quantity: 5 },
-        { id: uuidv4(), materialId: mentega.id, quantity: 200 },
-        { id: uuidv4(), materialId: susu.id, quantity: 200 },
-        { id: uuidv4(), materialId: vanili?.id || '', quantity: 5 },
-        { id: uuidv4(), materialId: bakingPowder?.id || '', quantity: 10 },
-      ].filter(i => i.materialId),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: uuidv4(),
-      name: 'Cookies Choco Chip',
-      description: 'Cookies renyah dengan choco chip',
-      yieldPerBatch: 24,
-      laborMinutes: 30,
-      ingredients: [
-        { id: uuidv4(), materialId: tepung.id, quantity: 200 },
-        { id: uuidv4(), materialId: gula.id, quantity: 100 },
-        { id: uuidv4(), materialId: telur.id, quantity: 2 },
-        { id: uuidv4(), materialId: mentega.id, quantity: 120 },
-        { id: uuidv4(), materialId: cokelat?.id || '', quantity: 50 },
-      ].filter(i => i.materialId),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ];
+  if (!products || products.length === 0) {
+    return [];
+  }
+
+  return products.map(p => ({
+    id: p.id,
+    name: p.name,
+    description: p.description || '',
+    yieldPerBatch: p.yield_per_batch,
+    laborMinutes: p.labor_minutes,
+    ingredients: (p.product_ingredients || []).map((i: { id: string; material_id: string; quantity: number }) => ({
+      id: i.id,
+      materialId: i.material_id,
+      quantity: i.quantity,
+    })),
+    createdAt: new Date(p.created_at),
+    updatedAt: new Date(p.updated_at),
+  }));
 };
 
-// Products API
-export const getProducts = (): Product[] => {
-  const products = loadFromStorage<Product[]>(STORAGE_KEYS.products, []);
-  if (products.length === 0) {
-    const materials = getMaterials();
-    const seedProducts = createSeedProducts(materials);
-    if (seedProducts.length > 0) {
-      saveProducts(seedProducts);
-      return seedProducts;
+export const addProduct = async (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Promise<Product | null> => {
+  const productId = uuidv4();
+
+  const { data, error } = await supabase
+    .from('products')
+    .insert({
+      id: productId,
+      name: product.name,
+      description: product.description,
+      yield_per_batch: product.yieldPerBatch,
+      labor_minutes: product.laborMinutes,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error adding product:', error);
+    return null;
+  }
+
+  // Insert ingredients
+  if (product.ingredients && product.ingredients.length > 0) {
+    const ingredients = product.ingredients.map(i => ({
+      id: uuidv4(),
+      product_id: productId,
+      material_id: i.materialId,
+      quantity: i.quantity,
+    }));
+
+    const { error: ingError } = await supabase.from('product_ingredients').insert(ingredients);
+    if (ingError) console.error('Error adding ingredients:', ingError);
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description || '',
+    yieldPerBatch: data.yield_per_batch,
+    laborMinutes: data.labor_minutes,
+    ingredients: product.ingredients || [],
+    createdAt: new Date(data.created_at),
+    updatedAt: new Date(data.updated_at),
+  };
+};
+
+export const updateProduct = async (id: string, updates: Partial<Product>): Promise<Product | null> => {
+  const updateData: Record<string, unknown> = {};
+  if (updates.name !== undefined) updateData.name = updates.name;
+  if (updates.description !== undefined) updateData.description = updates.description;
+  if (updates.yieldPerBatch !== undefined) updateData.yield_per_batch = updates.yieldPerBatch;
+  if (updates.laborMinutes !== undefined) updateData.labor_minutes = updates.laborMinutes;
+
+  const { data, error } = await supabase
+    .from('products')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating product:', error);
+    return null;
+  }
+
+  // Update ingredients if provided
+  if (updates.ingredients) {
+    // Delete existing ingredients
+    await supabase.from('product_ingredients').delete().eq('product_id', id);
+
+    // Insert new ingredients
+    if (updates.ingredients.length > 0) {
+      const ingredients = updates.ingredients.map(i => ({
+        id: uuidv4(),
+        product_id: id,
+        material_id: i.materialId,
+        quantity: i.quantity,
+      }));
+      await supabase.from('product_ingredients').insert(ingredients);
     }
   }
-  return products;
-};
 
-export const saveProducts = (products: Product[]): void => {
-  saveToStorage(STORAGE_KEYS.products, products);
-};
+  // Fetch updated product with ingredients
+  const { data: updated } = await supabase
+    .from('products')
+    .select(`*, product_ingredients (*)`)
+    .eq('id', id)
+    .single();
 
-export const addProduct = (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Product => {
-  const products = getProducts();
-  const newProduct: Product = {
-    ...product,
-    id: uuidv4(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
+  if (!updated) return null;
+
+  return {
+    id: updated.id,
+    name: updated.name,
+    description: updated.description || '',
+    yieldPerBatch: updated.yield_per_batch,
+    laborMinutes: updated.labor_minutes,
+    ingredients: (updated.product_ingredients || []).map((i: { id: string; material_id: string; quantity: number }) => ({
+      id: i.id,
+      materialId: i.material_id,
+      quantity: i.quantity,
+    })),
+    createdAt: new Date(updated.created_at),
+    updatedAt: new Date(updated.updated_at),
   };
-  saveProducts([...products, newProduct]);
-  return newProduct;
 };
 
-export const updateProduct = (id: string, updates: Partial<Product>): Product | null => {
-  const products = getProducts();
-  const index = products.findIndex(p => p.id === id);
-  if (index === -1) return null;
-  
-  products[index] = { ...products[index], ...updates, updatedAt: new Date() };
-  saveProducts(products);
-  return products[index];
-};
+export const deleteProduct = async (id: string): Promise<boolean> => {
+  // Delete ingredients first (cascade should handle this, but just in case)
+  await supabase.from('product_ingredients').delete().eq('product_id', id);
 
-export const deleteProduct = (id: string): boolean => {
-  const products = getProducts();
-  const filtered = products.filter(p => p.id !== id);
-  if (filtered.length === products.length) return false;
-  saveProducts(filtered);
+  const { error } = await supabase.from('products').delete().eq('id', id);
+  if (error) {
+    console.error('Error deleting product:', error);
+    return false;
+  }
   return true;
 };
 
-// Overheads API
-export const getOverheads = (): Overhead[] => {
-  const overheads = loadFromStorage<Overhead[]>(STORAGE_KEYS.overheads, []);
-  if (overheads.length === 0) {
-    saveOverheads(seedOverheads);
-    return seedOverheads;
+// ============ OVERHEADS API ============
+export const getOverheads = async (): Promise<Overhead[]> => {
+  const { data, error } = await supabase
+    .from('overheads')
+    .select('*')
+    .order('name');
+
+  if (error) {
+    console.error('Error fetching overheads:', error);
+    return [];
   }
-  return overheads;
+
+  if (!data || data.length === 0) {
+    await seedOverheadsData();
+    return getOverheads();
+  }
+
+  return data.map(o => ({
+    id: o.id,
+    name: o.name,
+    amount: o.amount,
+    allocationType: o.allocation_type as 'fixed' | 'per_unit' | 'percentage',
+  }));
 };
 
-export const saveOverheads = (overheads: Overhead[]): void => {
-  saveToStorage(STORAGE_KEYS.overheads, overheads);
+const seedOverheadsData = async () => {
+  const overheads = seedOverheads.map(o => ({
+    id: uuidv4(),
+    name: o.name,
+    amount: o.amount,
+    allocation_type: o.allocationType,
+  }));
+
+  const { error } = await supabase.from('overheads').insert(overheads);
+  if (error) console.error('Error seeding overheads:', error);
 };
 
-export const addOverhead = (overhead: Omit<Overhead, 'id'>): Overhead => {
-  const overheads = getOverheads();
-  const newOverhead: Overhead = { ...overhead, id: uuidv4() };
-  saveOverheads([...overheads, newOverhead]);
-  return newOverhead;
+export const addOverhead = async (overhead: Omit<Overhead, 'id'>): Promise<Overhead | null> => {
+  const { data, error } = await supabase
+    .from('overheads')
+    .insert({
+      id: uuidv4(),
+      name: overhead.name,
+      amount: overhead.amount,
+      allocation_type: overhead.allocationType,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error adding overhead:', error);
+    return null;
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    amount: data.amount,
+    allocationType: data.allocation_type as 'fixed' | 'per_unit' | 'percentage',
+  };
 };
 
-export const updateOverhead = (id: string, updates: Partial<Overhead>): Overhead | null => {
-  const overheads = getOverheads();
-  const index = overheads.findIndex(o => o.id === id);
-  if (index === -1) return null;
-  
-  overheads[index] = { ...overheads[index], ...updates };
-  saveOverheads(overheads);
-  return overheads[index];
+export const updateOverhead = async (id: string, updates: Partial<Overhead>): Promise<Overhead | null> => {
+  const updateData: Record<string, unknown> = {};
+  if (updates.name !== undefined) updateData.name = updates.name;
+  if (updates.amount !== undefined) updateData.amount = updates.amount;
+  if (updates.allocationType !== undefined) updateData.allocation_type = updates.allocationType;
+
+  const { data, error } = await supabase
+    .from('overheads')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating overhead:', error);
+    return null;
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    amount: data.amount,
+    allocationType: data.allocation_type as 'fixed' | 'per_unit' | 'percentage',
+  };
 };
 
-export const deleteOverhead = (id: string): boolean => {
-  const overheads = getOverheads();
-  const filtered = overheads.filter(o => o.id !== id);
-  if (filtered.length === overheads.length) return false;
-  saveOverheads(filtered);
+export const deleteOverhead = async (id: string): Promise<boolean> => {
+  const { error } = await supabase.from('overheads').delete().eq('id', id);
+  if (error) {
+    console.error('Error deleting overhead:', error);
+    return false;
+  }
   return true;
 };
 
-// Labor Rates API
-export const getLaborRates = (): LaborRate[] => {
-  const rates = loadFromStorage<LaborRate[]>(STORAGE_KEYS.laborRates, []);
-  if (rates.length === 0) {
-    saveLaborRates(seedLaborRates);
-    return seedLaborRates;
+// ============ LABOR RATES API ============
+export const getLaborRates = async (): Promise<LaborRate[]> => {
+  const { data, error } = await supabase
+    .from('labor_rates')
+    .select('*')
+    .order('name');
+
+  if (error) {
+    console.error('Error fetching labor rates:', error);
+    return [];
   }
-  return rates;
+
+  if (!data || data.length === 0) {
+    await seedLaborRatesData();
+    return getLaborRates();
+  }
+
+  return data.map(r => ({
+    id: r.id,
+    name: r.name,
+    wagePerHour: r.wage_per_hour,
+  }));
 };
 
-export const saveLaborRates = (rates: LaborRate[]): void => {
-  saveToStorage(STORAGE_KEYS.laborRates, rates);
+const seedLaborRatesData = async () => {
+  const rates = seedLaborRates.map(r => ({
+    id: uuidv4(),
+    name: r.name,
+    wage_per_hour: r.wagePerHour,
+  }));
+
+  const { error } = await supabase.from('labor_rates').insert(rates);
+  if (error) console.error('Error seeding labor rates:', error);
 };
 
-// Sales API
-export const getSales = (): Sale[] => {
-  return loadFromStorage<Sale[]>(STORAGE_KEYS.sales, []);
+export const saveLaborRates = async (rates: LaborRate[]): Promise<void> => {
+  // Delete all existing rates and insert new ones
+  await supabase.from('labor_rates').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+  if (rates.length > 0) {
+    const newRates = rates.map(r => ({
+      id: r.id || uuidv4(),
+      name: r.name,
+      wage_per_hour: r.wagePerHour,
+    }));
+    await supabase.from('labor_rates').insert(newRates);
+  }
 };
 
-export const saveSales = (sales: Sale[]): void => {
-  saveToStorage(STORAGE_KEYS.sales, sales);
+// ============ SALES API ============
+export const getSales = async (): Promise<Sale[]> => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*')
+    .order('sold_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching sales:', error);
+    return [];
+  }
+
+  return (data || []).map(s => ({
+    id: s.id,
+    productId: s.product_id,
+    quantity: s.quantity,
+    unitPrice: s.unit_price,
+    soldAt: new Date(s.sold_at),
+  }));
 };
 
-export const addSale = (sale: Omit<Sale, 'id'>): Sale => {
-  const sales = getSales();
-  const newSale: Sale = { ...sale, id: uuidv4() };
-  saveSales([...sales, newSale]);
-  return newSale;
+export const addSale = async (sale: Omit<Sale, 'id'>): Promise<Sale | null> => {
+  const { data, error } = await supabase
+    .from('sales')
+    .insert({
+      id: uuidv4(),
+      product_id: sale.productId,
+      quantity: sale.quantity,
+      unit_price: sale.unitPrice,
+      sold_at: sale.soldAt instanceof Date ? sale.soldAt.toISOString() : sale.soldAt,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error adding sale:', error);
+    return null;
+  }
+
+  return {
+    id: data.id,
+    productId: data.product_id,
+    quantity: data.quantity,
+    unitPrice: data.unit_price,
+    soldAt: new Date(data.sold_at),
+  };
 };
 
-export const deleteSale = (id: string): boolean => {
-  const sales = getSales();
-  const filtered = sales.filter(s => s.id !== id);
-  if (filtered.length === sales.length) return false;
-  saveSales(filtered);
+export const deleteSale = async (id: string): Promise<boolean> => {
+  const { error } = await supabase.from('sales').delete().eq('id', id);
+  if (error) {
+    console.error('Error deleting sale:', error);
+    return false;
+  }
   return true;
 };
 
 // Generate demo sales data
-export const generateDemoSales = (products: Product[]): void => {
+export const generateDemoSales = async (products: Product[]): Promise<void> => {
   if (products.length === 0) return;
-  
-  const sales: Sale[] = [];
+
+  const sales: {
+    id: string;
+    product_id: string;
+    quantity: number;
+    unit_price: number;
+    sold_at: string;
+  }[] = [];
   const now = new Date();
-  
+
   for (let i = 90; i >= 0; i--) {
     const date = new Date(now);
     date.setDate(date.getDate() - i);
-    
+
     products.forEach(product => {
-      // Random sales between 0-15 per day with some weekly pattern
       const dayOfWeek = date.getDay();
       const baseQty = dayOfWeek === 0 || dayOfWeek === 6 ? 8 : 5;
       const qty = Math.floor(Math.random() * 10) + baseQty;
-      
+
       if (qty > 0) {
         sales.push({
           id: uuidv4(),
-          productId: product.id,
+          product_id: product.id,
           quantity: qty,
-          unitPrice: Math.floor(Math.random() * 5000) + 15000,
-          soldAt: date,
+          unit_price: Math.floor(Math.random() * 5000) + 15000,
+          sold_at: date.toISOString(),
         });
       }
     });
   }
-  
-  saveSales(sales);
+
+  // Insert in batches of 100
+  for (let i = 0; i < sales.length; i += 100) {
+    const batch = sales.slice(i, i + 100);
+    const { error } = await supabase.from('sales').insert(batch);
+    if (error) console.error('Error inserting sales batch:', error);
+  }
+};
+
+// Legacy sync wrappers (deprecated - for backward compatibility during migration)
+export const saveMaterials = (_materials: Material[]): void => {
+  console.warn('saveMaterials is deprecated. Use individual add/update/delete functions.');
+};
+
+export const saveProducts = (_products: Product[]): void => {
+  console.warn('saveProducts is deprecated. Use individual add/update/delete functions.');
+};
+
+export const saveOverheads = (_overheads: Overhead[]): void => {
+  console.warn('saveOverheads is deprecated. Use individual add/update/delete functions.');
+};
+
+export const saveSales = (_sales: Sale[]): void => {
+  console.warn('saveSales is deprecated. Use individual add/update/delete functions.');
 };
