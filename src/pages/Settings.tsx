@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { getOverheads, saveOverheads, getLaborRates, saveLaborRates } from '@/lib/store';
+import { getOverheads, addOverhead, updateOverhead, deleteOverhead, getLaborRates, saveLaborRates } from '@/lib/store';
 import { formatCurrency, formatNumber } from '@/lib/hpp-calculator';
 import type { Overhead, LaborRate } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
@@ -22,10 +22,25 @@ const Settings: React.FC = () => {
   const [overheads, setOverheads] = useState<Overhead[]>([]);
   const [laborRates, setLaborRates] = useState<LaborRate[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = async () => {
+    try {
+      const [loadedOverheads, loadedLaborRates] = await Promise.all([
+        getOverheads(),
+        getLaborRates()
+      ]);
+      setOverheads(loadedOverheads);
+      setLaborRates(loadedLaborRates);
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setOverheads(getOverheads());
-    setLaborRates(getLaborRates());
+    loadData();
   }, []);
 
   const handleAddOverhead = () => {
@@ -72,7 +87,7 @@ const Settings: React.FC = () => {
     setHasChanges(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     // Validate
     const validOverheads = overheads.filter(o => o.name.trim() !== '');
     const validLaborRates = laborRates.filter(r => r.name.trim() !== '' && r.wagePerHour > 0);
@@ -82,15 +97,48 @@ const Settings: React.FC = () => {
       return;
     }
 
-    saveOverheads(validOverheads);
-    saveLaborRates(validLaborRates);
-    
-    setOverheads(validOverheads);
-    setLaborRates(validLaborRates);
-    setHasChanges(false);
-    
-    toast({ title: 'Berhasil', description: 'Pengaturan berhasil disimpan' });
+    try {
+      // Get current overheads from DB
+      const currentOverheads = await getOverheads();
+      const currentIds = currentOverheads.map(o => o.id);
+      const validIds = validOverheads.map(o => o.id);
+
+      // Delete removed overheads
+      for (const id of currentIds) {
+        if (!validIds.includes(id)) {
+          await deleteOverhead(id);
+        }
+      }
+
+      // Add or update overheads
+      for (const overhead of validOverheads) {
+        if (currentIds.includes(overhead.id)) {
+          await updateOverhead(overhead.id, overhead);
+        } else {
+          await addOverhead({ name: overhead.name, amount: overhead.amount, allocationType: overhead.allocationType });
+        }
+      }
+
+      // Save labor rates
+      await saveLaborRates(validLaborRates);
+      
+      await loadData();
+      setHasChanges(false);
+      
+      toast({ title: 'Berhasil', description: 'Pengaturan berhasil disimpan' });
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast({ title: 'Error', description: 'Gagal menyimpan pengaturan', variant: 'destructive' });
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in">
