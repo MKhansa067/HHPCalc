@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard,
   Package,
@@ -12,6 +14,8 @@ import {
   X,
   Boxes,
   FileSpreadsheet,
+  LogOut,
+  Home,
 } from 'lucide-react';
 
 interface NavItem {
@@ -21,7 +25,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: '/', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
+  { href: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
   { href: '/materials', label: 'Bahan Baku', icon: <Boxes className="w-5 h-5" /> },
   { href: '/products', label: 'Produk', icon: <Package className="w-5 h-5" /> },
   { href: '/sales', label: 'Penjualan', icon: <ShoppingCart className="w-5 h-5" /> },
@@ -37,7 +41,13 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const location = useLocation();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -92,6 +102,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          <NavLink
+            to="/"
+            onClick={() => setSidebarOpen(false)}
+            className="nav-item mb-2"
+          >
+            <Home className="w-5 h-5" />
+            <span className="font-medium">Beranda</span>
+          </NavLink>
+          
           {navItems.map((item) => (
             <NavLink
               key={item.href}
@@ -110,16 +129,24 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           ))}
         </nav>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-sidebar-border">
-          <div className="px-3 py-2 rounded-lg bg-sidebar-accent/50">
-            <p className="text-xs text-sidebar-foreground/70">
-              HPPCalc v1.0
-            </p>
-            <p className="text-xs text-sidebar-foreground/50 mt-1">
-              Kelola biaya produksi Anda
-            </p>
-          </div>
+        {/* User & Logout */}
+        <div className="p-4 border-t border-sidebar-border space-y-3">
+          {user && (
+            <div className="px-3 py-2 rounded-lg bg-sidebar-accent/50">
+              <p className="text-xs text-sidebar-foreground/70 truncate">
+                {user.email}
+              </p>
+            </div>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={handleSignOut}
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Keluar
+          </Button>
         </div>
       </aside>
 
